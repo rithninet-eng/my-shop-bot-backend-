@@ -1,7 +1,6 @@
-const { Telegraf, Markup } = require('telegraf');
+const { Telegraf, Markup, Scenes, session } = require('telegraf');
 const http = require('http');
 const db = require('./database.js'); // នាំចូល database helper
-const { Scenes, session } = Telegraf; // នាំចូល Scenes និង session
 const { t } = require('./i18n.js'); // នាំចូល i18n helper
 require('dotenv').config(); // ហៅ dotenv មកប្រើ
 
