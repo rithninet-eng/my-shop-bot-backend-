@@ -12,6 +12,7 @@
   "sales_report_button": "📈 ប្រវត្តិលក់",
   "add_stock_button": "➕ បន្ថែមស្តុក",
   "rename_category_button": "🔄 ប្តូរឈ្មោះ Category",
+  "delete_category_button": "🗑️ លុប Category",
   "close_panel_button": "⬅️ បិទផ្ទាំងបញ្ជា",
   "no_permission": "⛔ អ្នកមិនមានសិទ្ធិប្រើប្រាស់ Command នេះទេ។",
   "panel_closed": "បានបិទផ្ទាំងបញ្ជា។",

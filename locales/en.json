@@ -12,6 +12,7 @@
   "sales_report_button": "📈 Sales Report",
   "add_stock_button": "➕ Add Stock",
   "rename_category_button": "🔄 Rename Category",
+  "delete_category_button": "🗑️ Delete Category",
   "close_panel_button": "⬅️ Close Panel",
   "no_permission": "⛔ You do not have permission to use this command.",
   "panel_closed": "Control panel closed.",

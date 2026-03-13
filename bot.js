@@ -308,8 +308,8 @@ editProductScene.on('text', async (ctx) => {
         const productIndex = products[state.category].findIndex(p => p.name === state.originalName);
         if (productIndex !== -1) {
             products[state.category][productIndex] = state.product;
+            db.saveProducts(products); // រក្សាទុកការផ្លាស់ប្តូរ
         }
-        db.saveProducts(products);
         await ctx.reply(`✅ បានកែប្រែ "${fieldToEdit}" សម្រាប់ផលិតផល "${state.product.name}" ដោយជោគជ័យ!`);
         return ctx.scene.leave();
     }
@@ -352,6 +352,7 @@ editProductScene.on('photo', async (ctx) => {
         if (productIndex !== -1) {
             products[state.category][productIndex] = state.product;
         }
+        db.saveProducts(products); // រក្សាទុកការផ្លាស់ប្តូរ
         db.saveProducts(products);
 
         await ctx.reply(`✅ បានកែប្រែរូបភាពសម្រាប់ផលិតផល "${state.product.name}" ដោយជោគជ័យ!`);
@@ -429,6 +430,28 @@ bot.command('rename_category', (ctx) => {
   }
 });
 
+// Command សម្រាប់ Admin លុប Category ទាំងមូល
+bot.command('delete_category', (ctx) => {
+  if (String(ctx.from.id) !== ADMIN_ID) return ctx.reply(t(getUserLang(ctx), 'no_permission'));
+
+  const categoryToDelete = ctx.payload.trim();
+  if (!categoryToDelete) {
+    return ctx.replyWithHTML(
+      '⚠️ <b>របៀបប្រើមិនត្រឹមត្រូវ</b>\n\n' +
+      'សូមប្រើទម្រង់៖\n' +
+      '<code>/delete_category &lt;ឈ្មោះ Category&gt;</code>'
+    );
+  }
+
+  if (products.hasOwnProperty(categoryToDelete)) {
+    delete products[categoryToDelete];
+    db.saveProducts(products); // រក្សាទុកការផ្លាស់ប្តូរ
+    ctx.reply(`✅ បានលុប Category "${categoryToDelete}" ដោយជោគជ័យ!`);
+  } else {
+    ctx.reply(`❌ រកមិនឃើញ Category ឈ្មោះ "${categoryToDelete}" ទេ។`);
+  }
+});
+
 // Command សម្រាប់សរុប Command របស់ Admin
 bot.command('admin_help', (ctx) => {
   const lang = getUserLang(ctx);
@@ -441,9 +464,8 @@ bot.command('admin_help', (ctx) => {
       ...Markup.keyboard([
         [t(lang, 'check_stock_button'), t(lang, 'broadcast_button')],
         [t(lang, 'add_product_button'), t(lang, 'edit_product_button'), t(lang, 'delete_product_button')],
-        [t(lang, 'sales_report_button')],
-        [t(lang, 'add_stock_button')],
-        [t(lang, 'rename_category_button')],
+        [t(lang, 'add_stock_button'), t(lang, 'sales_report_button')],
+        [t(lang, 'rename_category_button'), t(lang, 'delete_category_button')],
         [t(lang, 'close_panel_button')]
       ]).resize()
     }
@@ -531,6 +553,12 @@ bot.hears('🔄 ប្តូរឈ្មោះ Category', (ctx) => {
   ctx.replyWithHTML('របៀបប្រើ៖ <code>/rename_category [Old Name]; [New Name]</code>');
 });
 
+bot.hears('🗑️ លុប Category', (ctx) => {
+  const lang = getUserLang(ctx);
+  if (String(ctx.from.id) !== ADMIN_ID || (ctx.message && ctx.message.text !== t(lang, 'delete_category_button'))) return;
+  ctx.replyWithHTML('របៀបប្រើ៖ <code>/delete_category &lt;ឈ្មោះ Category&gt;</code>');
+});
+
 bot.hears('⬅️ បិទផ្ទាំងបញ្ជា', (ctx) => {
   const lang = getUserLang(ctx);
   if (String(ctx.from.id) !== ADMIN_ID || ctx.message.text !== t(lang, 'close_panel_button')) return;
@@ -559,48 +587,75 @@ bot.command('sales_report', (ctx) => {
 
 // ឆ្លើយតបពេលអតិថិជនចុច "ទិញ" ពីក្នុង Mini App
 bot.on('web_app_data', async (ctx) => {
+  const lang = getUserLang(ctx);
   try {
     const data = ctx.webAppData.data.json(); // ទាញយកទិន្នន័យ JSON
+    const user = ctx.from;
     
-    // ជំនួស URL ខាងក្រោមដោយ Link រូបភាព QR Code ABA របស់អ្នក
-    const qrCodeUrl = 'https://pay.ababank.com/cv3/qr_code_placeholder.png'; 
+    // 1. ផ្ញើសារទៅកាន់ Admin ដើម្បីឱ្យ Admin ពិនិត្យ និងយល់ព្រម
+    const adminMessage = `
+🔔 <b>ការបញ្ជាទិញថ្មី</b> 🔔
 
-    // 1. ផ្ញើ QR Code និងវិក្កយបត្រ
-    await ctx.replyWithPhoto(qrCodeUrl, {
-      caption: `🎉 អរគុណសម្រាប់ការកម្ម៉ង់!\n\n📦 ទំនិញ: <b>${data.item}</b>\n💰 តម្លៃ: <b>$${data.price}</b>\n\nសូមស្កេន QR ខាងលើដើម្បីបង់ប្រាក់ 👆`,
-      parse_mode: 'HTML'
+<b>ពី:</b> ${user.first_name} (ID: <code>${user.id}</code>)
+<b>ទំនិញ:</b> ${data.item}
+<b>តម្លៃ:</b> $${data.price}
+
+សូមពិនិត្យមើលការទូទាត់ប្រាក់ក្នុងគណនី Bakong របស់អ្នក។
+ប្រសិនបើត្រឹមត្រូវ សូមចុច "យល់ព្រម" ដើម្បីផ្ញើគណនីជូនអតិថិជន។
+    `;
+
+    // ប៊ូតុងសម្រាប់ Admin យល់ព្រម
+    const callbackData = `approve_${user.id}_${data.price}_${data.item.replace(/ /g, '_')}`;
+    const approvalKeyboard = Markup.inlineKeyboard([
+        Markup.button.callback('✅ យល់ព្រម', callbackData),
+        Markup.button.callback('❌ បដិសេធ', `reject_${user.id}`)
+    ]);
+
+    await bot.telegram.sendMessage(ADMIN_ID, adminMessage, {
+        parse_mode: 'HTML',
+        ...approvalKeyboard
     });
 
-    // 2. ពិនិត្យមើលស្តុក និងផ្ញើគណនី
-    const stockList = productStock[data.item];
+    // 2. ផ្ញើសារទៅកាន់អតិថិជនដើម្បីឱ្យពួកគេរង់ចាំ
+    await ctx.reply('✅ បានទទួលការបញ្ជាទិញរបស់អ្នកហើយ។\n\n⏳ សូមរង់ចាំ Admin ពិនិត្យ និងផ្ញើគណនីជូនក្នុងពេលឆាប់ៗនេះ។');
 
-    if (stockList && stockList.length > 0) {
-      // ចាប់យកគណនីដំបូងគេ (Shift) ហើយលុបវាចេញពីស្តុកភ្លាមៗ ដើម្បីកុំឱ្យជាន់គ្នា
-      const account = stockList.shift();
-      db.saveStock(productStock); // រក្សាទុកស្តុកដែលបាន Update
-
-      // រក្សាទុកប្រវត្តិលក់
-      salesHistory.push({
-        item: data.item,
-        price: parseFloat(data.price),
-        date: new Date().toISOString(),
-      });
-      db.saveSales(salesHistory);
-      
-      await ctx.reply(`🚀 <b>ការដឹកជញ្ជូនស្វ័យប្រវត្តិ:</b>\n\n${account}\n\n🙏 សូមអរគុណសម្រាប់ការគាំទ្រ!`, { parse_mode: 'HTML' });
-
-      // 3. ត្រួតពិនិត្យស្តុក និងជូនដំណឹងទៅ Admin បើជិតអស់ (នៅសល់តិចជាង 2)
-      if (stockList.length < 2) {
-        bot.telegram.sendMessage(ADMIN_ID, `⚠️ <b>ជូនដំណឹង Admin:</b>\n\nទំនិញ <b>${data.item}</b> ជិតអស់ហើយ!\nបច្ចុប្បន្ននៅសល់: ${stockList.length}`, { parse_mode: 'HTML' });
-      }
-    } else {
-      await ctx.reply('⚠️ សុំទោស! ស្តុកទំនិញនេះអស់ហើយ។ Admin នឹងទាក់ទងទៅអ្នកឆាប់ៗ ឬផ្ញើលុយជូនវិញ។');
-      // ជូនដំណឹង Admin ថាមានគេចង់ទិញតែអស់ស្តុក
-      bot.telegram.sendMessage(ADMIN_ID, `❌ <b>ស្តុកអស់ហើយ:</b>\n\nអតិថិជនចង់ទិញ <b>${data.item}</b> ប៉ុន្តែស្តុកបានអស់។`, { parse_mode: 'HTML' });
-    }
   } catch (e) {
     ctx.reply('មានបញ្ហាក្នុងការទទួលទិន្នន័យ។');
   }
+});
+
+// Action handler សម្រាប់ Admin យល់ព្រម
+bot.action(/approve_(.+?)_(.+?)_(.+)/, async (ctx) => {
+    if (String(ctx.from.id) !== ADMIN_ID) return ctx.answerCbQuery('⛔ អ្នកមិនមែនជា Admin ទេ។');
+
+    const userId = ctx.match[1];
+    const price = parseFloat(ctx.match[2]);
+    const itemName = ctx.match[3].replace(/_/g, ' ');
+
+    const stockList = productStock[itemName];
+
+    if (stockList && stockList.length > 0) {
+        const account = stockList.shift();
+        db.saveStock(productStock);
+
+        // រក្សាទុកប្រវត្តិលក់
+        salesHistory.push({ item: itemName, price: price, date: new Date().toISOString() });
+        db.saveSales(salesHistory);
+
+        await bot.telegram.sendMessage(userId, `🚀 <b>ការដឹកជញ្ជូនគណនី:</b>\n\n${account}\n\n🙏 សូមអរគុណសម្រាប់ការគាំទ្រ!`, { parse_mode: 'HTML' });
+        await ctx.editMessageText(ctx.callbackQuery.message.text + '\n\n✅ បានយល់ព្រម និងផ្ញើគណនីរួចរាល់។');
+    } else {
+        await ctx.answerCbQuery('⚠️ ស្តុកអស់ហើយ!', { show_alert: true });
+        await ctx.editMessageText(ctx.callbackQuery.message.text + '\n\n❌ បរាជ័យ! ស្តុកអស់ហើយ។');
+    }
+});
+
+// Action handler សម្រាប់ Admin បដិសេធ
+bot.action(/reject_(.+)/, async (ctx) => {
+    if (String(ctx.from.id) !== ADMIN_ID) return ctx.answerCbQuery('⛔ អ្នកមិនមែនជា Admin ទេ។');
+    const userId = ctx.match[1];
+    await bot.telegram.sendMessage(userId, '❌ សុំទោស! ការបញ្ជាទិញរបស់អ្នកត្រូវបានបដិសេធ។ សូមទាក់ទង Admin សម្រាប់ព័ត៌មានបន្ថែម។');
+    await ctx.editMessageText(ctx.callbackQuery.message.text + '\n\n❌ បានបដិសេធការបញ្ជាទិញនេះ។');
 });
 
 // ឆ្លើយតបសារដោយស្វ័យប្រវត្តិពេលគេផ្ញើរូបភាពមក
