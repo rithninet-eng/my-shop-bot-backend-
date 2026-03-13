@@ -84,7 +84,7 @@ bot.telegram.setMyShortDescription('Mini App Bot ដោយប្រើ Node.js')
 
 // ដាក់ Link វេបសាយរបស់អ្នកនៅទីនេះ (ត្រូវតែជា HTTPS)
 // ឧទាហរណ៍៖ https://yourusername.github.io/your-repo/
-const webAppUrl = 'https://your-username.github.io/your-repo-name/'; // <--- ដាក់ Link ពិតប្រាកដរបស់អ្នកពី GitHub Pages នៅទីនេះ
+const webAppUrl = 'https://rithninet-eng.github.io/my-mini-app-frontend/';
 
 // កំណត់ Menu Button ឱ្យជាប់នៅខាងឆ្វេងកន្លែងវាយអក្សរ (ជំនួសឱ្យប៊ូតុង Menu ធម្មតា)
 bot.telegram.setChatMenuButton({
