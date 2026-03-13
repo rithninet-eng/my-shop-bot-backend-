@@ -334,7 +334,33 @@ editProductScene.action('edit_imageUrl', (ctx) => {
 });
 
 editProductScene.on('photo', async (ctx) => {
-    // ... (Logic for handling photo upload will be similar to addProductScene)
+    const state = ctx.scene.state;
+    if (!state.product || state.editing !== 'imageUrl') {
+        return; // Not expecting a photo right now
+    }
+
+    await ctx.reply('កំពុង Upload រូបភាពថ្មី...');
+
+    try {
+        const photo = ctx.message.photo.pop();
+        const fileDetails = await ctx.telegram.getFile(photo.file_id);
+        const newImageUrl = `https://api.telegram.org/file/bot${process.env.BOT_TOKEN}/${fileDetails.file_path}`;
+
+        // Update the product
+        state.product.imageUrl = newImageUrl;
+        const productIndex = products[state.category].findIndex(p => p.name === state.originalName);
+        if (productIndex !== -1) {
+            products[state.category][productIndex] = state.product;
+        }
+        db.saveProducts(products);
+
+        await ctx.reply(`✅ បានកែប្រែរូបភាពសម្រាប់ផលិតផល "${state.product.name}" ដោយជោគជ័យ!`);
+    } catch (error) {
+        console.error('Error uploading new photo:', error);
+        await ctx.reply('❌ មានបញ្ហាក្នុងការ Upload រូបភាពថ្មី។ សូមព្យាយាមម្តងទៀត។');
+    }
+
+    return ctx.scene.leave();
 });
 
 editProductScene.command('cancel', (ctx) => ctx.scene.leave(ctx.reply('បានបោះបង់ការកែប្រែ។')));
