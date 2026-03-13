@@ -473,7 +473,7 @@ bot.command('admin_help', (ctx) => {
 // Handlers សម្រាប់ប៊ូតុងរបស់ Admin
 bot.hears('📊 ឆែកស្តុក', (ctx) => {
   const lang = getUserLang(ctx);
-  if (String(ctx.from.id) !== ADMIN_ID || ctx.message.text !== t(lang, 'check_stock_button')) return;
+  if (String(ctx.from.id) !== ADMIN_ID || (ctx.message && ctx.message.text !== t(lang, 'check_stock_button'))) return;
   // Reuse the logic from checkstock command
   let message = '📦 <b>ស្ថានភាពស្តុកបច្ចុប្បន្ន:</b>\n\n';
   for (const [item, stock] of Object.entries(productStock)) {
@@ -484,7 +484,7 @@ bot.hears('📊 ឆែកស្តុក', (ctx) => {
 
 bot.hears('📢 បញ្ជូនសារ (Broadcast)', (ctx) => {
   const lang = getUserLang(ctx);
-  if (String(ctx.from.id) !== ADMIN_ID || ctx.message.text !== t(lang, 'broadcast_button')) return;
+  if (String(ctx.from.id) !== ADMIN_ID || (ctx.message && ctx.message.text !== t(lang, 'broadcast_button'))) return;
   ctx.replyWithHTML('របៀបប្រើ៖ <code>/broadcast [សារដែលចង់ផ្ញើ]</code>');
 });
 
@@ -503,13 +503,13 @@ bot.hears('✏️ កែផលិតផល', (ctx) => {
 
 bot.hears('🗑️ លុបផលិតផល', (ctx) => {
   const lang = getUserLang(ctx);
-  if (String(ctx.from.id) !== ADMIN_ID || ctx.message.text !== t(lang, 'delete_product_button')) return;
+  if (String(ctx.from.id) !== ADMIN_ID || (ctx.message && ctx.message.text !== t(lang, 'delete_product_button'))) return;
   ctx.replyWithHTML('របៀបប្រើ៖ <code>/delete_product [Name]</code>');
 });
 
 bot.hears('📈 ប្រវត្តិលក់', (ctx) => {
   const lang = getUserLang(ctx);
-  if (String(ctx.from.id) !== ADMIN_ID || ctx.message.text !== t(lang, 'sales_report_button')) return;
+  if (String(ctx.from.id) !== ADMIN_ID || (ctx.message && ctx.message.text !== t(lang, 'sales_report_button'))) return;
 
   const today = new Date().toISOString().slice(0, 10); // Get YYYY-MM-DD
 
@@ -541,13 +541,13 @@ bot.hears('📈 ប្រវត្តិលក់', (ctx) => {
 
 bot.hears('➕ បន្ថែមស្តុក', (ctx) => {
   const lang = getUserLang(ctx);
-  if (String(ctx.from.id) !== ADMIN_ID || ctx.message.text !== t(lang, 'add_stock_button')) return;
+  if (String(ctx.from.id) !== ADMIN_ID || (ctx.message && ctx.message.text !== t(lang, 'add_stock_button'))) return;
   ctx.replyWithHTML('របៀបប្រើ៖ <code>/add_stock &lt;ឈ្មោះផលិតផល&gt;; &lt;Email | Pass...&gt;</code>');
 });
 
 bot.hears('🔄 ប្តូរឈ្មោះ Category', (ctx) => {
   const lang = getUserLang(ctx);
-  if (String(ctx.from.id) !== ADMIN_ID || ctx.message.text !== t(lang, 'rename_category_button')) return;
+  if (String(ctx.from.id) !== ADMIN_ID || (ctx.message && ctx.message.text !== t(lang, 'rename_category_button'))) return;
   ctx.replyWithHTML('របៀបប្រើ៖ <code>/rename_category [Old Name]; [New Name]</code>');
 });
 
@@ -559,7 +559,7 @@ bot.hears('🗑️ លុប Category', (ctx) => {
 
 bot.hears('⬅️ បិទផ្ទាំងបញ្ជា', (ctx) => {
   const lang = getUserLang(ctx);
-  if (String(ctx.from.id) !== ADMIN_ID || ctx.message.text !== t(lang, 'close_panel_button')) return;
+  if (String(ctx.from.id) !== ADMIN_ID || (ctx.message && ctx.message.text !== t(lang, 'close_panel_button'))) return;
   ctx.reply(t(lang, 'panel_closed'), Markup.removeKeyboard());
 });
 
