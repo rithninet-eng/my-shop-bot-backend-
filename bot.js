@@ -10,13 +10,12 @@ const bot = new Telegraf(process.env.BOT_TOKEN);
 // ដាក់ ID របស់ Admin នៅទីនេះ (ដើម្បីទទួលសារជូនដំណឹង)
 const ADMIN_ID = process.env.ADMIN_ID; 
 
-// ១. បង្កើតកន្លែងទុក User ID ទាំងអស់ (ប្រើ Set ដើម្បីកុំឱ្យស្ទួន)
-// ទិន្នន័យនឹងត្រូវបានអានពីហ្វាល JSON
-let userIds = db.loadUsers();
-let productStock = db.loadStock();
-let products = db.loadProducts();
-let salesHistory = db.loadSales();
-let userSettings = db.loadSettings();
+// Global variables for data
+let userIds;
+let productStock;
+let products;
+let salesHistory;
+let userSettings;
 
 // Helper function to get user language
 const getUserLang = (ctx) => {
@@ -30,7 +29,7 @@ bot.use((ctx, next) => {
   if (ctx.from) {
     if (!userIds.has(ctx.from.id)) {
       userIds.add(ctx.from.id);
-      db.saveUsers(userIds); // រក្សាទុក User ID ថ្មី
+      db.addUser(ctx.from.id); // រក្សាទុក User ID ថ្មី
     }
     // Set default language for new users
     if (!userSettings[ctx.from.id]) {
@@ -138,18 +137,18 @@ bot.hears('🌐 ភាសា/Language', (ctx) => {
 });
  
 // Action សម្រាប់ប៊ូតុងប្តូរភាសា
-bot.action(/set_lang_(.+)/, (ctx) => {
+bot.action(/set_lang_(.+)/, async (ctx) => {
     const langCode = ctx.match[1];
     if (langCode === 'en' || langCode === 'km') {
         userSettings[ctx.from.id] = { ...userSettings[ctx.from.id], lang: langCode };
-        db.saveSettings(userSettings);
+        await db.saveSettings(userSettings);
         ctx.answerCbQuery(t(langCode, `language_set_to_${langCode}`));
         ctx.editMessageText(t(langCode, 'language_changed'));
     }
 });
 
 // Command សម្រាប់ Admin បន្ថែមស្តុកគណនី
-bot.command('add_stock', (ctx) => {
+bot.command('add_stock', async (ctx) => {
   // ឆែកសិទ្ធិ Admin
   if (String(ctx.from.id) !== ADMIN_ID) return ctx.reply(t(getUserLang(ctx), 'no_permission'));
 
@@ -177,7 +176,7 @@ bot.command('add_stock', (ctx) => {
   }
   // បន្ថែមចូលស្តុក
   productStock[productName].push(newAccount);
-  db.saveStock(productStock); // រក្សាទុកស្តុក
+  await db.saveStock(productStock); // រក្សាទុកស្តុក
   
   ctx.reply(`✅ បានបន្ថែមគណនីសម្រាប់ "${productName}" ជោគជ័យ!\n📦 ស្តុកសរុបបច្ចុប្បន្ន: ${productStock[productName].length}`);
 });
@@ -235,7 +234,7 @@ addProductScene.on('photo', async (ctx) => {
         }
 
         products[category].push({ name, description, price, imageUrl });
-        db.saveProducts(products); // Save products to file
+        await db.saveProducts(products); // Save products to file
 
         await ctx.reply(`✅ បានបន្ថែមផលិតផល "${name}" ទៅក្នុង Category "${category}" ដោយជោគជ័យ!`);
 
@@ -308,7 +307,7 @@ editProductScene.on('text', async (ctx) => {
         const productIndex = products[state.category].findIndex(p => p.name === state.originalName);
         if (productIndex !== -1) {
             products[state.category][productIndex] = state.product;
-            db.saveProducts(products); // រក្សាទុកការផ្លាស់ប្តូរ
+            await db.saveProducts(products); // រក្សាទុកការផ្លាស់ប្តូរ
         }
         await ctx.reply(`✅ បានកែប្រែ "${fieldToEdit}" សម្រាប់ផលិតផល "${state.product.name}" ដោយជោគជ័យ!`);
         return ctx.scene.leave();
@@ -352,8 +351,7 @@ editProductScene.on('photo', async (ctx) => {
         if (productIndex !== -1) {
             products[state.category][productIndex] = state.product;
         }
-        db.saveProducts(products); // រក្សាទុកការផ្លាស់ប្តូរ
-        db.saveProducts(products);
+        await db.saveProducts(products); // រក្សាទុកការផ្លាស់ប្តូរ
 
         await ctx.reply(`✅ បានកែប្រែរូបភាពសម្រាប់ផលិតផល "${state.product.name}" ដោយជោគជ័យ!`);
     } catch (error) {
@@ -370,7 +368,7 @@ const stage = new Scenes.Stage([addProductScene, editProductScene]);
 bot.use(stage.middleware());
 
 // Command សម្រាប់ Admin លុបផលិតផល
-bot.command('delete_product', (ctx) => {
+bot.command('delete_product', async (ctx) => {
   if (String(ctx.from.id) !== ADMIN_ID) return ctx.reply(t(getUserLang(ctx), 'no_permission'));
 
   const productNameToDelete = ctx.payload.trim();
@@ -383,7 +381,7 @@ bot.command('delete_product', (ctx) => {
     const productIndex = products[category].findIndex(p => p.name.toLowerCase() === productNameToDelete.toLowerCase());
     if (productIndex !== -1) {
       products[category].splice(productIndex, 1);
-      db.saveProducts(products); // រក្សាទុកការផ្លាស់ប្តូរ
+      await db.saveProducts(products); // រក្សាទុកការផ្លាស់ប្តូរ
       productFound = true;
       break; // បញ្ឈប់ការស្វែងរកពេលរកឃើញ និងលុបរួច
     }
@@ -397,7 +395,7 @@ bot.command('delete_product', (ctx) => {
 });
 
 // Command សម្រាប់ Admin ប្តូរឈ្មោះ Category
-bot.command('rename_category', (ctx) => {
+bot.command('rename_category', async (ctx) => {
   if (String(ctx.from.id) !== ADMIN_ID) return ctx.reply(t(getUserLang(ctx), 'no_permission'));
 
   const args = ctx.payload.split(';').map(arg => arg.trim());
@@ -423,7 +421,7 @@ bot.command('rename_category', (ctx) => {
     }
     products[newName] = products[oldName];
     delete products[oldName];
-    db.saveProducts(products); // រក្សាទុកការផ្លាស់ប្តូរ
+    await db.saveProducts(products); // រក្សាទុកការផ្លាស់ប្តូរ
     ctx.reply(`✅ បានប្តូរឈ្មោះ Category ពី "${oldName}" ទៅជា "${newName}" ដោយជោគជ័យ!`);
   } else {
     ctx.reply(`❌ រកមិនឃើញ Category ឈ្មោះ "${oldName}" ទេ។`);
@@ -431,7 +429,7 @@ bot.command('rename_category', (ctx) => {
 });
 
 // Command សម្រាប់ Admin លុប Category ទាំងមូល
-bot.command('delete_category', (ctx) => {
+bot.command('delete_category', async (ctx) => {
   if (String(ctx.from.id) !== ADMIN_ID) return ctx.reply(t(getUserLang(ctx), 'no_permission'));
 
   const categoryToDelete = ctx.payload.trim();
@@ -445,7 +443,7 @@ bot.command('delete_category', (ctx) => {
 
   if (products.hasOwnProperty(categoryToDelete)) {
     delete products[categoryToDelete];
-    db.saveProducts(products); // រក្សាទុកការផ្លាស់ប្តូរ
+    await db.saveProducts(products); // រក្សាទុកការផ្លាស់ប្តូរ
     ctx.reply(`✅ បានលុប Category "${categoryToDelete}" ដោយជោគជ័យ!`);
   } else {
     ctx.reply(`❌ រកមិនឃើញ Category ឈ្មោះ "${categoryToDelete}" ទេ។`);
@@ -636,11 +634,12 @@ bot.action(/approve_(.+?)_(.+?)_(.+)/, async (ctx) => {
 
     if (stockList && stockList.length > 0) {
         const account = stockList.shift();
-        db.saveStock(productStock);
+        await db.saveStock(productStock);
 
         // រក្សាទុកប្រវត្តិលក់
-        salesHistory.push({ item: itemName, price: price, date: new Date().toISOString() });
-        db.saveSales(salesHistory);
+        const saleRecord = { item: itemName, price: price, date: new Date().toISOString(), userId: userId };
+        await db.saveSale(saleRecord);
+        salesHistory.push(saleRecord); // Update in-memory cache
 
         await bot.telegram.sendMessage(userId, `🚀 <b>ការដឹកជញ្ជូនគណនី:</b>\n\n${account}\n\n🙏 សូមអរគុណសម្រាប់ការគាំទ្រ!`, { parse_mode: 'HTML' });
         await ctx.editMessageText(ctx.callbackQuery.message.text + '\n\n✅ បានយល់ព្រម និងផ្ញើគណនីរួចរាល់។');
@@ -663,35 +662,51 @@ bot.on('photo', (ctx) => {
   ctx.reply('បានទទួលរូបភាពហើយ! 📸 អរគុណសម្រាប់ការផ្ញើរូបភាពមក។');
 });
 
-bot.launch();
-
-// បង្កើត HTTP Server សាមញ្ញមួយដើម្បីឱ្យ Cloud Hosting ដឹងថា Bot កំពុងដើរ
-const PORT = process.env.PORT || 3003; // ប្តូរទៅ Port ផ្សេង ឧទាហរណ៍ 3003
-http.createServer((req, res) => {
-  // បង្កើត Endpoint សម្រាប់ Mini App ទាញយកបញ្ជីផលិតផល
-  if (req.url === '/products' && req.method === 'GET') {
-    const productsWithStock = {};
-    for (const category in products) {
-        productsWithStock[category] = products[category].map(product => {
-            const stockCount = productStock[product.name] ? productStock[product.name].length : 0;
-            return {
-                ...product,
-                stockCount: stockCount
-            };
-        });
+async function start() {
+    // Connect to the database and load initial data
+    try {
+        await db.connect();
+        userIds = await db.loadUsers();
+        productStock = await db.loadStock();
+        products = await db.loadProducts();
+        salesHistory = await db.loadSales();
+        userSettings = await db.loadSettings();
+    } catch (e) {
+        console.error('Failed to connect to database and load data!', e);
+        process.exit(1); // Exit if cannot connect to DB
     }
-    res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Access-Control-Allow-Origin', '*'); // អនុញ្ញាតឱ្យគ្រប់វេបសាយអាចទាញទិន្នន័យនេះបាន
-    res.end(JSON.stringify(productsWithStock));
-    return;
-  }
 
-  // ចម្លើយ Default
-  res.end('Bot is running...');
-}).listen(PORT, () => console.log(`Server listening on port ${PORT}`));
+    // បង្កើត HTTP Server សាមញ្ញមួយដើម្បីឱ្យ Cloud Hosting ដឹងថា Bot កំពុងដើរ
+    const PORT = process.env.PORT || 3003;
+    http.createServer((req, res) => {
+      // បង្កើត Endpoint សម្រាប់ Mini App ទាញយកបញ្ជីផលិតផល
+      if (req.url === '/products' && req.method === 'GET') {
+        const productsWithStock = {};
+        for (const category in products) {
+            productsWithStock[category] = products[category].map(product => {
+                const stockCount = productStock[product.name] ? productStock[product.name].length : 0;
+                return {
+                    ...product,
+                    stockCount: stockCount
+                };
+            });
+        }
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.end(JSON.stringify(productsWithStock));
+        return;
+      }
 
-// បង្ហាញថា Bot កំពុងដំណើរការ
-console.log('Bot កំពុងដំណើរការ...');
+      // ចម្លើយ Default
+      res.end('Bot is running...');
+    }).listen(PORT, () => console.log(`Server listening on port ${PORT}`));
+
+    // Launch the bot
+    bot.launch();
+    console.log('Bot កំពុងដំណើរការ...');
+}
+
+start();
 
 // បិទ Bot ដោយសុវត្ថិភាព
 process.once('SIGINT', () => bot.stop('SIGINT'));
