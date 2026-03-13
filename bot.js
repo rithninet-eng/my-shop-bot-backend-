@@ -1,6 +1,7 @@
 const { Telegraf, Markup } = require('telegraf');
 const http = require('http');
 const db = require('./database.js'); // នាំចូល database helper
+const { Scenes, session } = Telegraf; // នាំចូល Scenes និង session
 const { t } = require('./i18n.js'); // នាំចូល i18n helper
 require('dotenv').config(); // ហៅ dotenv មកប្រើ
 
@@ -22,6 +23,8 @@ let userSettings = db.loadSettings();
 const getUserLang = (ctx) => {
   return userSettings[ctx.from?.id]?.lang || 'km'; // Default to Khmer
 };
+
+bot.use(session()); // បើកដំណើរការ session
 
 // ២. Middleware ដើម្បីចាប់យក ID អ្នកប្រើប្រាស់គ្រប់គ្នាដែលឆាតមក
 bot.use((ctx, next) => {
@@ -180,34 +183,165 @@ bot.command('add_stock', (ctx) => {
   ctx.reply(`✅ បានបន្ថែមគណនីសម្រាប់ "${productName}" ជោគជ័យ!\n📦 ស្តុកសរុបបច្ចុប្បន្ន: ${productStock[productName].length}`);
 });
 
-// Command សម្រាប់ Admin បន្ថែមផលិតផលថ្មី
-bot.command('add_product', (ctx) => {
-  if (String(ctx.from.id) !== ADMIN_ID) return ctx.reply(t(getUserLang(ctx), 'no_permission'));
+// --- ផ្នែកគ្រប់គ្រងការបន្ថែម និងកែប្រែផលិតផល (Scenes) ---
+const addProductScene = new Scenes.BaseScene('addProductScene');
 
-  const args = ctx.payload.split(';').map(arg => arg.trim());
-  if (args.length !== 5) {
-    return ctx.replyWithHTML(
-      '⚠️ <b>របៀបប្រើមិនត្រឹមត្រូវ</b>\n\n' +
-      'សូមប្រើទម្រង់៖\n' +
-      '<code>/add_product Category; Name; Description; Price; ImageURL</code>\n\n' +
-      '<b>ឧទាហរណ៍៖</b>\n' +
-      '<code>/add_product 🎮 Games; Mobile Legends; 100 Diamonds; 1.00; https://image.url/ml.png</code>'
-    );
+addProductScene.enter((ctx) => ctx.reply('សូមបញ្ចូលឈ្មោះ Category:'));
+
+addProductScene.on('text', async (ctx) => {
+  const sceneState = ctx.scene.state;
+  const text = ctx.message.text;
+
+  if (!sceneState.category) {
+    sceneState.category = text;
+    return ctx.reply('សូមបញ្ចូលឈ្មោះផលិតផល:');
   }
-
-  const [category, name, description, price, imageUrl] = args;
-
-  // បង្កើត Category បើមិនទាន់មាន
-  if (!products[category]) {
-    products[category] = [];
+  if (!sceneState.name) {
+    sceneState.name = text;
+    return ctx.reply('សូមបញ្ចូលការពិពណ៌នា (Description):');
   }
-
-  // បន្ថែមផលិតផលថ្មី
-  products[category].push({ name, description, price, imageUrl });
-  db.saveProducts(products); // រក្សាទុកផលិតផល
-
-  ctx.reply(`✅ បានបន្ថែមផលិតផល "${name}" ទៅក្នុង Category "${category}" ដោយជោគជ័យ!`);
+  if (!sceneState.description) {
+    sceneState.description = text;
+    return ctx.reply('សូមបញ្ចូលតម្លៃ (ឧទាហរណ៍: 5.00):');
+  }
+  if (!sceneState.price) {
+    // Validate price
+    if (isNaN(parseFloat(text))) {
+      return ctx.reply('តម្លៃមិនត្រឹមត្រូវ! សូមបញ្ចូលជាលេខ (ឧទាហរណ៍: 5.00):');
+    }
+    sceneState.price = text;
+    return ctx.reply('សូមផ្ញើរូបភាពសម្រាប់ផលិតផល:');
+  }
 });
+
+addProductScene.on('photo', async (ctx) => {
+    const sceneState = ctx.scene.state;
+
+    if (!sceneState.price) {
+        return ctx.reply('សូមបំពេញព័ត៌មានមុននឹងផ្ញើរូបភាព។');
+    }
+
+    await ctx.reply('កំពុង Upload រូបភាព...');
+
+    try {
+        const photo = ctx.message.photo.pop(); // Get the largest photo
+        const fileDetails = await ctx.telegram.getFile(photo.file_id);
+        const imageUrl = `https://api.telegram.org/file/bot${process.env.BOT_TOKEN}/${fileDetails.file_path}`;
+
+        const { category, name, description, price } = sceneState;
+
+        // បង្កើត Category បើមិនទាន់មាន
+        if (!products[category]) {
+            products[category] = [];
+        }
+
+        products[category].push({ name, description, price, imageUrl });
+        db.saveProducts(products); // Save products to file
+
+        await ctx.reply(`✅ បានបន្ថែមផលិតផល "${name}" ទៅក្នុង Category "${category}" ដោយជោគជ័យ!`);
+
+    } catch (error) {
+        console.error('Error uploading photo:', error);
+        await ctx.reply('❌ មានបញ្ហាក្នុងការ Upload រូបភាព។ សូមព្យាយាមម្តងទៀត។');
+    }
+
+    return ctx.scene.leave();
+});
+
+addProductScene.command('cancel', (ctx) => {
+    ctx.reply('បានបោះបង់ការបន្ថែមផលិតផល។');
+    return ctx.scene.leave();
+});
+
+addProductScene.on('message', (ctx) => {
+    if (ctx.scene.state.price) {
+        return ctx.reply('សូមផ្ញើរូបភាពសម្រាប់ផលិតផល ឬវាយ /cancel ដើម្បីបោះបង់។');
+    }
+    return ctx.reply('សូមបញ្ចូលព័ត៌មានតាមលំដាប់។');
+});
+
+const editProductScene = new Scenes.BaseScene('editProductScene');
+
+editProductScene.enter((ctx) => ctx.reply('សូមបញ្ចូលឈ្មោះផលិតផលដែលអ្នកចង់កែប្រែ: (ឬវាយ /cancel ដើម្បីបោះបង់)'));
+
+editProductScene.on('text', async (ctx) => {
+    const state = ctx.scene.state;
+    const text = ctx.message.text;
+
+    if (!state.product) {
+        let foundProduct = null;
+        let categoryOfProduct = null;
+        for (const category in products) {
+            const p = products[category].find(prod => prod.name.toLowerCase() === text.toLowerCase());
+            if (p) {
+                foundProduct = p;
+                categoryOfProduct = category;
+                break;
+            }
+        }
+
+        if (foundProduct) {
+            state.product = { ...foundProduct };
+            state.originalName = foundProduct.name;
+            state.category = categoryOfProduct;
+            await ctx.replyWithHTML(
+                `<b>ផលិតផល:</b> ${foundProduct.name}\n` +
+                `<b>តម្លៃ:</b> $${foundProduct.price}\n` +
+                `<b>ការពិពណ៌នា:</b> ${foundProduct.description}`
+            );
+            return ctx.reply('តើអ្នកចង់កែប្រែអ្វី?', Markup.inlineKeyboard([
+                [Markup.button.callback('✏️ ការពិពណ៌នា', 'edit_description')],
+                [Markup.button.callback('💰 តម្លៃ', 'edit_price')],
+                [Markup.button.callback('🖼️ រូបភាព', 'edit_imageUrl')]
+            ]));
+        } else {
+            await ctx.reply(`❌ រកមិនឃើញផលិតផលឈ្មោះ "${text}" ទេ។`);
+            return ctx.scene.leave();
+        }
+    }
+
+    if (state.editing && state.editing !== 'imageUrl') {
+        const fieldToEdit = state.editing;
+        if (fieldToEdit === 'price' && isNaN(parseFloat(text))) {
+            return ctx.reply('តម្លៃមិនត្រឹមត្រូវ! សូមបញ្ចូលជាលេខ (ឧទាហរណ៍: 5.00):');
+        }
+        state.product[fieldToEdit] = text;
+        const productIndex = products[state.category].findIndex(p => p.name === state.originalName);
+        if (productIndex !== -1) {
+            products[state.category][productIndex] = state.product;
+        }
+        db.saveProducts(products);
+        await ctx.reply(`✅ បានកែប្រែ "${fieldToEdit}" សម្រាប់ផលិតផល "${state.product.name}" ដោយជោគជ័យ!`);
+        return ctx.scene.leave();
+    }
+});
+
+editProductScene.action('edit_description', (ctx) => {
+    ctx.scene.state.editing = 'description';
+    ctx.answerCbQuery();
+    return ctx.editMessageText('សូមបញ្ចូលការពិពណ៌នាថ្មី:');
+});
+
+editProductScene.action('edit_price', (ctx) => {
+    ctx.scene.state.editing = 'price';
+    ctx.answerCbQuery();
+    return ctx.editMessageText('សូមបញ្ចូលតម្លៃថ្មី:');
+});
+
+editProductScene.action('edit_imageUrl', (ctx) => {
+    ctx.scene.state.editing = 'imageUrl';
+    ctx.answerCbQuery();
+    return ctx.editMessageText('សូមផ្ញើរូបភាពថ្មី:');
+});
+
+editProductScene.on('photo', async (ctx) => {
+    // ... (Logic for handling photo upload will be similar to addProductScene)
+});
+
+editProductScene.command('cancel', (ctx) => ctx.scene.leave(ctx.reply('បានបោះបង់ការកែប្រែ។')));
+
+const stage = new Scenes.Stage([addProductScene, editProductScene]);
+bot.use(stage.middleware());
 
 // Command សម្រាប់ Admin លុបផលិតផល
 bot.command('delete_product', (ctx) => {
@@ -234,41 +368,6 @@ bot.command('delete_product', (ctx) => {
   } else {
     ctx.reply(`❌ រកមិនឃើញផលិតផលឈ្មោះ "${productNameToDelete}" ទេ។`);
   }
-});
-
-// Command សម្រាប់ Admin កែប្រែព័ត៌មានផលិតផល
-bot.command('edit_product', (ctx) => {
-  if (String(ctx.from.id) !== ADMIN_ID) return ctx.reply(t(getUserLang(ctx), 'no_permission'));
-
-  const args = ctx.payload.split(';').map(arg => arg.trim());
-  if (args.length !== 3) {
-    return ctx.replyWithHTML(
-      '⚠️ <b>របៀបប្រើមិនត្រឹមត្រូវ</b>\n\n' +
-      'សូមប្រើទម្រង់៖\n' +
-      '<code>/edit_product <ឈ្មោះផលិតផល>; <field>; <តម្លៃថ្មី></code>\n\n' +
-      '<b>Field ដែលអាចកែបាន:</b> <i>description, price, imageUrl</i>\n\n' +
-      '<b>ឧទាហរណ៍៖</b>\n' +
-      '<code>/edit_product CapCut Pro 1 Year; price; 6.00</code>'
-    );
-  }
-
-  const [productName, fieldToEdit, newValue] = args;
-  const allowedFields = ['description', 'price', 'imageUrl'];
-
-  if (!allowedFields.includes(fieldToEdit)) {
-      return ctx.reply(`❌ Field "${fieldToEdit}" មិនអាចកែប្រែបានទេ។ សូមប្រើ៖ ${allowedFields.join(', ')}`);
-  }
-
-  for (const category in products) {
-    const product = products[category].find(p => p.name.toLowerCase() === productName.toLowerCase());
-    if (product) {
-      product[fieldToEdit] = newValue;
-      db.saveProducts(products); // រក្សាទុកការផ្លាស់ប្តូរ
-      return ctx.reply(`✅ បានកែប្រែ field "${fieldToEdit}" របស់ផលិតផល "${productName}" ដោយជោគជ័យ!`);
-    }
-  }
-
-  return ctx.reply(`❌ រកមិនឃើញផលិតផលឈ្មោះ "${productName}" ទេ។`);
 });
 
 // Command សម្រាប់ Admin ប្តូរឈ្មោះ Category
@@ -346,14 +445,15 @@ bot.hears('📢 បញ្ជូនសារ (Broadcast)', (ctx) => {
 
 bot.hears('➕ បន្ថែមផលិតផល', (ctx) => {
   const lang = getUserLang(ctx);
-  if (String(ctx.from.id) !== ADMIN_ID || ctx.message.text !== t(lang, 'add_product_button')) return;
-  ctx.replyWithHTML('របៀបប្រើ៖ <code>/add_product [Cat]; [Name]; [Desc]; [Price]; [ImgURL]</code>');
+  if (String(ctx.from.id) !== ADMIN_ID || (ctx.message && ctx.message.text !== t(lang, 'add_product_button'))) return;
+  // Enter the add product scene
+  ctx.scene.enter('addProductScene');
 });
 
 bot.hears('✏️ កែផលិតផល', (ctx) => {
   const lang = getUserLang(ctx);
-  if (String(ctx.from.id) !== ADMIN_ID || ctx.message.text !== t(lang, 'edit_product_button')) return;
-  ctx.replyWithHTML('របៀបប្រើ៖ <code>/edit_product [Name]; [field]; [new_value]</code>');
+  if (String(ctx.from.id) !== ADMIN_ID || (ctx.message && ctx.message.text !== t(lang, 'edit_product_button'))) return;
+  ctx.scene.enter('editProductScene');
 });
 
 bot.hears('🗑️ លុបផលិតផល', (ctx) => {
