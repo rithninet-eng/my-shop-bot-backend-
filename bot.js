@@ -147,40 +147,6 @@ bot.action(/set_lang_(.+)/, async (ctx) => {
     }
 });
 
-// Command សម្រាប់ Admin បន្ថែមស្តុកគណនី
-bot.command('add_stock', async (ctx) => {
-  // ឆែកសិទ្ធិ Admin
-  if (String(ctx.from.id) !== ADMIN_ID) return ctx.reply(t(getUserLang(ctx), 'no_permission'));
-
-  const args = ctx.payload.split(';').map(arg => arg.trim());
-  if (args.length !== 2) {
-    return ctx.replyWithHTML(
-      '⚠️ <b>របៀបប្រើមិនត្រឹមត្រូវ</b>\n\n' +
-      'សូមប្រើទម្រង់៖\n' +
-      '<code>/add_stock &lt;ឈ្មោះផលិតផល&gt;; &lt;Email | Pass...&gt;</code>\n\n' +
-      '<b>ឧទាហរណ៍៖</b>\n' +
-      '<code>/add_stock CapCut Pro 1 Year; new@email.com | 12345</code>'
-    );
-  }
-
-  const [productName, newAccount] = args;
-
-  // ពិនិត្យមើលថាតើផលិតផលមានក្នុងបញ្ជីដែរឬទេ
-  const productExists = Object.values(products).flat().some(p => p.name.toLowerCase() === productName.toLowerCase());
-  if (!productExists) {
-      return ctx.reply(`❌ រកមិនឃើញផលិតផលឈ្មោះ "${productName}" ទេ។ សូមប្រាកដថាអ្នកបានសរសេរឈ្មោះត្រូវ។`);
-  }
-
-  if (!productStock[productName]) {
-    productStock[productName] = [];
-  }
-  // បន្ថែមចូលស្តុក
-  productStock[productName].push(newAccount);
-  await db.saveStock(productStock); // រក្សាទុកស្តុក
-  
-  ctx.reply(`✅ បានបន្ថែមគណនីសម្រាប់ "${productName}" ជោគជ័យ!\n📦 ស្តុកសរុបបច្ចុប្បន្ន: ${productStock[productName].length}`);
-});
-
 // --- ផ្នែកគ្រប់គ្រងការបន្ថែម និងកែប្រែផលិតផល (Scenes) ---
 const addProductScene = new Scenes.BaseScene('addProductScene');
 
@@ -234,7 +200,7 @@ addProductScene.on('photo', async (ctx) => {
         }
 
         products[category].push({ name, description, price, imageUrl });
-        await db.saveProducts(products); // Save products to file
+        await db.saveProducts(products); // រក្សាទុកផលិតផលទៅកាន់ Database
 
         await ctx.reply(`✅ បានបន្ថែមផលិតផល "${name}" ទៅក្នុង Category "${category}" ដោយជោគជ័យ!`);
 
@@ -364,7 +330,144 @@ editProductScene.on('photo', async (ctx) => {
 
 editProductScene.command('cancel', (ctx) => ctx.scene.leave(ctx.reply('បានបោះបង់ការកែប្រែ។')));
 
-const stage = new Scenes.Stage([addProductScene, editProductScene]);
+const addStockScene = new Scenes.BaseScene('addStockScene');
+
+addStockScene.enter(async (ctx) => {
+    const allProducts = Object.values(products).flat();
+    if (allProducts.length === 0) {
+        await ctx.reply('❌ មិនមានផលិតផលសម្រាប់បន្ថែមស្តុកទេ។ សូមបន្ថែមផលិតផលជាមុនសិន។');
+        return ctx.scene.leave();
+    }
+
+    const productButtons = allProducts.map(p => Markup.button.callback(p.name, `select_stock_product_${p.name.replace(/ /g, '_')}`));
+
+    const rows = [];
+    for (let i = 0; i < productButtons.length; i += 2) {
+        rows.push(productButtons.slice(i, i + 2));
+    }
+
+    await ctx.reply('សូមជ្រើសរើសផលិតផលដែលអ្នកចង់បន្ថែមស្តុក:', Markup.inlineKeyboard(rows));
+});
+
+addStockScene.action(/select_stock_product_(.+)/, async (ctx) => {
+    const productName = ctx.match[1].replace(/_/g, ' ');
+    ctx.scene.state.productName = productName;
+    await ctx.answerCbQuery();
+    await ctx.editMessageText(`✅ បានជ្រើសរើស៖ ${productName}`);
+    return ctx.replyWithHTML(
+        `សូមបញ្ចូលព័ត៌មានគណនីសម្រាប់ <b>${productName}</b>។\n\n` +
+        'អ្នកអាចបន្ថែមច្រើនគណនីក្នុងពេលតែមួយ ដោយដាក់មួយបន្ទាត់មួយគណនី។\n\n' +
+        '<b>ទម្រង់៖</b> <code>email|password</code>'
+    );
+});
+
+addStockScene.on('text', async (ctx) => {
+    const { productName } = ctx.scene.state;
+    if (!productName) {
+        await ctx.reply('សូមជ្រើសរើសផលិតផលជាមុនសិន។');
+        return ctx.scene.reenter();
+    }
+
+    const newAccounts = ctx.message.text.split('\n').map(line => line.trim()).filter(line => line);
+    if (newAccounts.length === 0) {
+        await ctx.reply('អ្នកមិនបានបញ្ចូលព័ត៌មានគណនីទេ។ សូមព្យាយាមម្តងទៀត ឬវាយ /cancel ។');
+        return;
+    }
+
+    if (!productStock[productName]) {
+        productStock[productName] = [];
+    }
+
+    productStock[productName].push(...newAccounts);
+    await db.saveStock(productStock);
+
+    await ctx.reply(`✅ បានបន្ថែម ${newAccounts.length} គណនីថ្មីទៅ "${productName}" ដោយជោគជ័យ។\n📦 ស្តុកសរុបឥឡូវនេះគឺ៖ ${productStock[productName].length}`);
+
+    return ctx.scene.leave();
+});
+
+addStockScene.command('cancel', (ctx) => {
+    ctx.reply('បានបោះបង់ការបន្ថែមស្តុក។');
+    return ctx.scene.leave();
+});
+
+const editStockScene = new Scenes.BaseScene('editStockScene');
+
+editStockScene.enter(async (ctx) => {
+    const lang = getUserLang(ctx);
+    const productsWithStock = Object.keys(productStock).filter(p => productStock[p] && productStock[p].length > 0);
+
+    if (productsWithStock.length === 0) {
+        await ctx.reply('❌ មិនមានផលិតផលណាមួយមានស្តុកសម្រាប់កែប្រែទេ។');
+        return ctx.scene.leave();
+    }
+
+    const productButtons = productsWithStock.map(p => Markup.button.callback(p, `select_edit_stock_${p.replace(/ /g, '_')}`));
+
+    const rows = [];
+    for (let i = 0; i < productButtons.length; i += 2) {
+        rows.push(productButtons.slice(i, i + 2));
+    }
+
+    await ctx.reply('សូមជ្រើសរើសផលិតផលដែលអ្នកចង់កែប្រែស្តុក:', Markup.inlineKeyboard(rows));
+});
+
+editStockScene.action(/select_edit_stock_(.+)/, async (ctx) => {
+    const productName = ctx.match[1].replace(/_/g, ' ');
+    ctx.scene.state.productName = productName;
+    const stockList = productStock[productName];
+
+    if (!stockList || stockList.length === 0) {
+        await ctx.answerCbQuery();
+        await ctx.editMessageText(`❌ ផលិតផល "${productName}" នេះអស់ពីស្តុកហើយ។`);
+        return ctx.scene.leave();
+    }
+
+    ctx.scene.state.accounts = stockList;
+
+    const accountButtons = stockList.map((account, index) => {
+        const displayText = `${index + 1}. ${account.substring(0, 20)}...`;
+        return Markup.button.callback(displayText, `edit_stock_account_${index}`);
+    });
+
+    const rows = accountButtons.map(btn => [btn]); // One button per row
+
+    await ctx.answerCbQuery();
+    await ctx.editMessageText(`សូមជ្រើសរើសគណនីសម្រាប់ "${productName}" ដែលអ្នកចង់កែប្រែ:`, Markup.inlineKeyboard(rows));
+});
+
+editStockScene.action(/edit_stock_account_(.+)/, async (ctx) => {
+    const accountIndex = parseInt(ctx.match[1], 10);
+    ctx.scene.state.accountIndex = accountIndex;
+    const oldAccount = ctx.scene.state.accounts[accountIndex];
+
+    await ctx.answerCbQuery();
+    await ctx.editMessageText(`គណនីបច្ចុប្បន្ន៖\n<code>${oldAccount}</code>\n\nសូមបញ្ចូលព័ត៌មានគណនីថ្មី (ទម្រង់: email|password):`, { parse_mode: 'HTML' });
+});
+
+editStockScene.on('text', async (ctx) => {
+    const { productName, accountIndex } = ctx.scene.state;
+    if (productName === undefined || accountIndex === undefined) return;
+
+    const newAccountInfo = ctx.message.text.trim();
+    const oldAccountInfo = productStock[productName][accountIndex];
+    productStock[productName][accountIndex] = newAccountInfo;
+    await db.saveStock(productStock);
+
+    await ctx.replyWithHTML(`✅ បានកែប្រែព័ត៌មានគណនីដោយជោគជ័យ។\n\n<b>ពី:</b> <code>${oldAccountInfo}</code>\n<b>ទៅ:</b> <code>${newAccountInfo}</code>`);
+    return ctx.scene.leave();
+});
+
+editStockScene.command('cancel', (ctx) => {
+    ctx.reply('បានបោះបង់ការកែប្រែស្តុក។');
+    return ctx.scene.leave();
+});
+
+editStockScene.on('message', (ctx) => {
+    ctx.reply('សូមធ្វើតាមការណែនាំ ឬវាយ /cancel ដើម្បីបោះបង់។');
+});
+
+const stage = new Scenes.Stage([addProductScene, editProductScene, addStockScene, editStockScene]);
 bot.use(stage.middleware());
 
 // Command សម្រាប់ Admin លុបផលិតផល
@@ -462,7 +565,7 @@ bot.command('admin_help', (ctx) => {
       ...Markup.keyboard([
         [t(lang, 'check_stock_button'), t(lang, 'broadcast_button')],
         [t(lang, 'add_product_button'), t(lang, 'edit_product_button'), t(lang, 'delete_product_button')],
-        [t(lang, 'add_stock_button'), t(lang, 'sales_report_button')],
+        [t(lang, 'add_stock_button'), t(lang, 'edit_stock_button'), t(lang, 'sales_report_button')],
         [t(lang, 'rename_category_button'), t(lang, 'delete_category_button')],
         [t(lang, 'close_panel_button')]
       ]).resize()
@@ -539,10 +642,16 @@ bot.hears('📈 ប្រវត្តិលក់', (ctx) => {
   ctx.replyWithHTML(report);
 });
 
+bot.hears('✏️ កែស្តុក', (ctx) => {
+  const lang = getUserLang(ctx);
+  if (String(ctx.from.id) !== ADMIN_ID || (ctx.message && ctx.message.text !== t(lang, 'edit_stock_button'))) return;
+  ctx.scene.enter('editStockScene');
+});
+
 bot.hears('➕ បន្ថែមស្តុក', (ctx) => {
   const lang = getUserLang(ctx);
   if (String(ctx.from.id) !== ADMIN_ID || (ctx.message && ctx.message.text !== t(lang, 'add_stock_button'))) return;
-  ctx.replyWithHTML('របៀបប្រើ៖ <code>/add_stock &lt;ឈ្មោះផលិតផល&gt;; &lt;Email | Pass...&gt;</code>');
+  ctx.scene.enter('addStockScene');
 });
 
 bot.hears('🔄 ប្តូរឈ្មោះ Category', (ctx) => {
