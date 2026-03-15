@@ -1,5 +1,6 @@
 const { Telegraf, Markup, Scenes, session } = require('telegraf');
 const http = require('http');
+const axios = require('axios'); // នាំចូល axios
 const db = require('./database.js'); // នាំចូល database helper
 const { t } = require('./i18n.js'); // នាំចូល i18n helper
 require('dotenv').config(); // ហៅ dotenv មកប្រើ
@@ -9,6 +10,9 @@ const bot = new Telegraf(process.env.BOT_TOKEN);
 
 // ដាក់ ID របស់ Admin នៅទីនេះ (ដើម្បីទទួលសារជូនដំណឹង)
 const ADMIN_ID = process.env.ADMIN_ID; 
+
+// យក Token សម្រាប់ប្រព័ន្ធទូទាត់ប្រាក់ពី BotFather
+const PAYMENT_PROVIDER_TOKEN = process.env.PAYMENT_PROVIDER_TOKEN;
 
 // Global variables for data
 let userIds;
@@ -85,7 +89,7 @@ bot.telegram.setMyShortDescription('Mini App Bot ដោយប្រើ Node.js')
 
 // ដាក់ Link វេបសាយរបស់អ្នកនៅទីនេះ (ត្រូវតែជា HTTPS)
 // ឧទាហរណ៍៖ https://yourusername.github.io/your-repo/
-const webAppUrl = 'https://rithninet-eng.github.io/my-mini-app-frontend/';
+const webAppUrl = process.env.WEB_APP_URL || 'https://rithninet-eng.github.io/my-mini-app-frontend/';
 
 // កំណត់ Menu Button ឱ្យជាប់នៅខាងឆ្វេងកន្លែងវាយអក្សរ (ជំនួសឱ្យប៊ូតុង Menu ធម្មតា)
 bot.telegram.setChatMenuButton({
@@ -692,78 +696,50 @@ bot.command('sales_report', (ctx) => {
   return bot.hears('📈 ប្រវត្តិលក់')(ctx);
 });
 
-// ឆ្លើយតបពេលអតិថិជនចុច "ទិញ" ពីក្នុង Mini App
+// --- ប្រព័ន្ធទូទាត់ប្រាក់ស្វ័យប្រវត្តិ አማራጭ (Webhook Method) ---
+
+// ជំហានទី១៖ ឆ្លើយតបពេលអតិថិជនចុច "ទិញ" ពីក្នុង Mini App
 bot.on('web_app_data', async (ctx) => {
   const lang = getUserLang(ctx);
   try {
     const data = ctx.webAppData.data.json(); // ទាញយកទិន្នន័យ JSON
     const user = ctx.from;
-    
-    // 1. ផ្ញើសារទៅកាន់ Admin ដើម្បីឱ្យ Admin ពិនិត្យ និងយល់ព្រម
-    const adminMessage = `
-🔔 <b>ការបញ្ជាទិញថ្មី</b> 🔔
 
-<b>ពី:</b> ${user.first_name} (ID: <code>${user.id}</code>)
-<b>ទំនិញ:</b> ${data.item}
-<b>តម្លៃ:</b> $${data.price}
+    // ពិនិត្យមើល Stock ជាមុន
+    const stockList = productStock[data.item];
+    if (!stockList || stockList.length === 0) {
+      return ctx.reply(t(lang, 'out_of_stock_error'));
+    }
 
-សូមពិនិត្យមើលការទូទាត់ប្រាក់ក្នុងគណនី Bakong របស់អ្នក។
-ប្រសិនបើត្រឹមត្រូវ សូមចុច "យល់ព្រម" ដើម្បីផ្ញើគណនីជូនអតិថិជន។
-    `;
+    // 1. បង្កើត "លេខយោង" (Reference Code) ដែលមិនជាន់គ្នា
+    const refCode = `SALE-${user.id}-${Date.now().toString().slice(-6)}`;
 
-    // ប៊ូតុងសម្រាប់ Admin យល់ព្រម
-    const callbackData = `approve_${user.id}_${data.price}_${data.item.replace(/ /g, '_')}`;
-    const approvalKeyboard = Markup.inlineKeyboard([
-        Markup.button.callback('✅ យល់ព្រម', callbackData),
-        Markup.button.callback('❌ បដិសេធ', `reject_${user.id}`)
-    ]);
-
-    await bot.telegram.sendMessage(ADMIN_ID, adminMessage, {
-        parse_mode: 'HTML',
-        ...approvalKeyboard
+    // 2. រក្សាទុកព័ត៌មានការបញ្ជាទិញជាមួយ refCode ក្នុង Database
+    // ចំណាំ៖ ត្រូវប្រាកដថា function createPendingOrder របស់អ្នកអាចរក្សាទុក refCode បាន
+    await db.createPendingOrder(refCode, {
+      userId: user.id,
+      itemName: data.item,
+      price: data.price,
+      status: 'pending'
     });
+    
+    // 3. បង្ហាញ Static QR និងការណែនាំ
+    const staticQrUrl = 'https://i.imgur.com/your-static-qr-code.png'; // << ដាក់ URL នៃរូបភាព KHQR របស់អ្នកនៅទីនេះ
+    const instructionText = `✅ <b>ការបញ្ជាទិញរបស់អ្នកត្រូវបានបង្កើត</b>\n\n` +
+                            `<b>ទំនិញ៖</b> ${data.item}\n` +
+                            `<b>តម្លៃ៖</b> $${data.price}\n\n` +
+                            `<b><u>ការណែនាំសំខាន់៖</u></b>\n` +
+                            `1️⃣ សូមស្កេន QR Code ខាងក្រោម។\n` +
+                            `2️⃣ នៅក្នុង App ធនាគាររបស់អ្នក សូមប្រាកដថាអ្នកបានវាយបញ្ចូល "<b>លេខយោង</b>" ខាងក្រោមនេះ នៅក្នុងช่อง <b>Remark</b> ឬ <b>Note</b>៖\n\n` +
+                            `<code>${refCode}</code>\n\n` +
+                            `🙏 បន្ទាប់ពីទូទាត់สำเร็จ អ្នកនឹងទទួលបានគណនីដោយស្វ័យប្រវត្តិ។`;
 
-    // 2. ផ្ញើសារទៅកាន់អតិថិជនដើម្បីឱ្យពួកគេរង់ចាំ
-    await ctx.reply('✅ បានទទួលការបញ្ជាទិញរបស់អ្នកហើយ។\n\n⏳ សូមរង់ចាំ Admin ពិនិត្យ និងផ្ញើគណនីជូនក្នុងពេលឆាប់ៗនេះ។');
+    await ctx.replyWithPhoto(staticQrUrl, { caption: instructionText, parse_mode: 'HTML' });
 
   } catch (e) {
-    ctx.reply('មានបញ្ហាក្នុងការទទួលទិន្នន័យ។');
+    console.error("Error processing web_app_data for custom payment:", e);
+    ctx.reply(t(lang, 'error_processing_data'));
   }
-});
-
-// Action handler សម្រាប់ Admin យល់ព្រម
-bot.action(/approve_(.+?)_(.+?)_(.+)/, async (ctx) => {
-    if (String(ctx.from.id) !== ADMIN_ID) return ctx.answerCbQuery('⛔ អ្នកមិនមែនជា Admin ទេ។');
-
-    const userId = ctx.match[1];
-    const price = parseFloat(ctx.match[2]);
-    const itemName = ctx.match[3].replace(/_/g, ' ');
-
-    const stockList = productStock[itemName];
-
-    if (stockList && stockList.length > 0) {
-        const account = stockList.shift();
-        await db.saveStock(productStock);
-
-        // រក្សាទុកប្រវត្តិលក់
-        const saleRecord = { item: itemName, price: price, date: new Date().toISOString(), userId: userId };
-        await db.saveSale(saleRecord);
-        salesHistory.push(saleRecord); // Update in-memory cache
-
-        await bot.telegram.sendMessage(userId, `🚀 <b>ការដឹកជញ្ជូនគណនី:</b>\n\n${account}\n\n🙏 សូមអរគុណសម្រាប់ការគាំទ្រ!`, { parse_mode: 'HTML' });
-        await ctx.editMessageText(ctx.callbackQuery.message.text + '\n\n✅ បានយល់ព្រម និងផ្ញើគណនីរួចរាល់។');
-    } else {
-        await ctx.answerCbQuery('⚠️ ស្តុកអស់ហើយ!', { show_alert: true });
-        await ctx.editMessageText(ctx.callbackQuery.message.text + '\n\n❌ បរាជ័យ! ស្តុកអស់ហើយ។');
-    }
-});
-
-// Action handler សម្រាប់ Admin បដិសេធ
-bot.action(/reject_(.+)/, async (ctx) => {
-    if (String(ctx.from.id) !== ADMIN_ID) return ctx.answerCbQuery('⛔ អ្នកមិនមែនជា Admin ទេ។');
-    const userId = ctx.match[1];
-    await bot.telegram.sendMessage(userId, '❌ សុំទោស! ការបញ្ជាទិញរបស់អ្នកត្រូវបានបដិសេធ។ សូមទាក់ទង Admin សម្រាប់ព័ត៌មានបន្ថែម។');
-    await ctx.editMessageText(ctx.callbackQuery.message.text + '\n\n❌ បានបដិសេធការបញ្ជាទិញនេះ។');
 });
 
 // ឆ្លើយតបសារដោយស្វ័យប្រវត្តិពេលគេផ្ញើរូបភាពមក
@@ -788,7 +764,54 @@ async function start() {
     // បង្កើត HTTP Server សាមញ្ញមួយដើម្បីឱ្យ Cloud Hosting ដឹងថា Bot កំពុងដើរ
     const PORT = process.env.PORT || 3003;
     http.createServer((req, res) => {
-      // បង្កើត Endpoint សម្រាប់ Mini App ទាញយកបញ្ជីផលិតផល
+      // Endpoint សម្រាប់ទទួលការបញ្ជាក់ការទូទាត់ពី Python service
+      if (req.url === '/payment-complete' && req.method === 'POST') {
+        let body = '';
+        req.on('data', chunk => {
+            body += chunk.toString();
+        });
+        req.on('end', async () => {
+            try {
+                // ជំហានទី២៖ ទទួល និងដំណើរការ Webhook
+                const paymentData = JSON.parse(body); // ឥឡូវនេះ paymentData នឹងមាន refCode
+                const refCode = paymentData.refCode;
+                const paymentStatus = paymentData.status;
+
+                if (paymentStatus === 'completed') {
+                    const order = await db.getPendingOrder(refCode); // ស្វែងរក Order តាម refCode
+                    if (order && order.status === 'pending') {
+                        const { userId, itemName, price } = order;
+                        const lang = getUserLang({ from: { id: userId } });
+
+                        const stockList = productStock[itemName];
+                        if (stockList?.length > 0) {
+                            const account = stockList.shift();
+                            await db.saveStock(productStock);
+
+                            const saleRecord = { item: itemName, price: price, date: new Date().toISOString(), userId: userId };
+                            await db.saveSale(saleRecord);
+                            salesHistory.push(saleRecord);
+
+                            await bot.telegram.sendMessage(userId, `✅ ការទូទាត់ជោគជ័យ!\n\n🚀 <b>${t(lang, 'account_delivery_header')}</b>\n\n<code>${account}</code>\n\n🙏 ${t(lang, 'thank_you_message')}`, { parse_mode: 'HTML' });
+                            await bot.telegram.sendMessage(ADMIN_ID, `✅ (Bakong) លក់สำเร็จ!\n\nទំនិញ៖ ${itemName}\nតម្លៃ៖ $${price}\nអ្នកប្រើ៖ ${userId}`);
+
+                            await db.updatePendingOrderStatus(refCode, 'completed');
+                        } else {
+                           await bot.telegram.sendMessage(ADMIN_ID, `🚨 (Bakong) កំហុសធ្ងន់ធ្ងរ៖ បានទទួលការទូទាត់ប្រាក់សម្រាប់ ${itemName} ប៉ុន្តែអស់ពីស្តុក! សូមទាក់ទងអ្នកប្រើ ${userId} ជាបន្ទាន់។`);
+                        }
+                    }
+                }
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ status: 'received' }));
+            } catch (e) {
+                console.error('Payment completion processing error:', e);
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ status: 'error' }));
+            }
+        });
+        return;
+      }
+
       if (req.url === '/products' && req.method === 'GET') {
         const productsWithStock = {};
         for (const category in products) {

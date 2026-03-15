@@ -26,5 +26,12 @@
   "language_select_prompt": "Please select your language / សូមជ្រើសរើសភាសារបស់អ្នក",
   "language_changed": "Language has been changed. / ភាសាត្រូវបានផ្លាស់ប្តូរ។",
   "language_set_to_en": "Language set to English",
-  "language_set_to_km": "ភាសាត្រូវបានកំណត់ជាភាសាខ្មែរ"
+  "language_set_to_km": "ភាសាត្រូវបានកំណត់ជាភាសាខ្មែរ",
+  "payment_system_unavailable": "សូមអភ័យទោស! ប្រព័ន្ធទូទាត់ប្រាក់មិនទាន់ដំណើរការទេ។",
+  "error_processing_data": "មានបញ្ហាក្នុងការទទួលទិន្នន័យ។",
+  "out_of_stock_error": "សុំទោស! ទំនិញនេះអស់ពីស្តុកហើយ។",
+  "internal_payment_error": "មានបញ្ហាបច្ចេកទេស។ សូមព្យាយាមម្តងទៀតនៅពេលក្រោយ។",
+  "account_delivery_header": "ការដឹកជញ្ជូនគណនី:",
+  "thank_you_message": "សូមអរគុណសម្រាប់ការគាំទ្រ!",
+  "out_of_stock_after_payment_error": "សុំទោស! ទំនិញនេះទើបតែអស់ពីស្តុកពេលលោកអ្នកកំពុងទូទាត់ប្រាក់។ សូមទាក់ទង Admin។"
 }
