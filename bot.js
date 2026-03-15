@@ -724,10 +724,13 @@ bot.on('web_app_data', async (ctx) => {
     });
     
     // 3. បង្ហាញ Static QR និងការណែនាំ
-    const staticQrUrl = 'https://i.imgur.com/your-static-qr-code.png'; // << ដាក់ URL នៃរូបភាព KHQR របស់អ្នកនៅទីនេះ
+    // *** ចំណុចសំខាន់ ***
+    // សូម Upload រូបភាព KHQR របស់អ្នកទៅកាន់សេវាកម្មដូចជា Imgur (https://imgur.com/upload) ដើម្បីទទួលបាន Link
+    // បន្ទាប់មក យក Link នោះមកដាក់ជំនួស URL ខាងក្រោមនេះ។
+    const staticQrUrl = 'https://imgur.com/a/z0G6b1p'; // << ដាក់ URL នៃរូបភាព KHQR របស់អ្នកនៅទីនេះ
     const instructionText = `✅ <b>ការបញ្ជាទិញរបស់អ្នកត្រូវបានបង្កើត</b>\n\n` +
                             `<b>ទំនិញ៖</b> ${data.item}\n` +
-                            `<b>តម្លៃ៖</b> $${data.price}\n\n` +
+                            `<b>តម្លៃ៖</b> $${data.price.toFixed(2)}\n\n` +
                             `<b><u>ការណែនាំសំខាន់៖</u></b>\n` +
                             `1️⃣ សូមស្កេន QR Code ខាងក្រោម។\n` +
                             `2️⃣ នៅក្នុង App ធនាគាររបស់អ្នក សូមប្រាកដថាអ្នកបានវាយបញ្ចូល "<b>លេខយោង</b>" ខាងក្រោមនេះ នៅក្នុងช่อง <b>Remark</b> ឬ <b>Note</b>៖\n\n` +
