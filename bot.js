@@ -764,6 +764,9 @@ async function start() {
     // បង្កើត HTTP Server សាមញ្ញមួយដើម្បីឱ្យ Cloud Hosting ដឹងថា Bot កំពុងដើរ
     const PORT = process.env.PORT || 3003;
     http.createServer((req, res) => {
+      // បន្ថែមការ Log សម្រាប់រាល់ Request ដែលចូលមក ដើម្បីងាយស្រួល Debug
+      console.log(`Received request: ${req.method} ${req.url}`);
+
       // Endpoint សម្រាប់ទទួលការបញ្ជាក់ការទូទាត់ពី Python service
       if (req.url === '/payment-complete' && req.method === 'POST') {
         let body = '';
@@ -830,6 +833,7 @@ async function start() {
       }
 
       // ចម្លើយ Default
+      res.setHeader('Content-Type', 'text/plain');
       res.end('Bot is running...');
     }).listen(PORT, () => console.log(`Server listening on port ${PORT}`));
 
